@@ -14,7 +14,7 @@ type pcb struct{
 	Parent int
 	Priority int //1 to n-1
 	Children *list.List
-	Resources list.List[*resourceInfo] 
+	Resources *list.List
 }
 
 type rcb struct{
@@ -129,14 +129,30 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 			(*rcbArray)[resourceIndex].State = (*rcbArray)[resourceIndex].State - unblockedProcess.requestedUnits
 			// insert (r, k) into j.resources
 			newResource := &resourceInfo{ResourceIndex: resourceIndex, Units: requestedUnits}
-			(*pcbArray)[unblockedProcess.index].Resources.PushBack(newResource)
+			(*pcbArray)[unblockedProcess.Index].Resources.PushBack(newResource)
 			// j.state = ready
-			(*pcbArray)[unblockedProcess.index].State = 1
+			(*pcbArray)[unblockedProcess.Index].State = 1
 			// remove (j, k) from r.waitlist		
-			(*rcb)[resourceIndex].Waitlist.Remove(unblockedProcess)
+			var removed bool = false
+			for e:=(*rcbArray)[resourceIndex].Waitlist.Front(); e != nil; e = e.Next(){
+				node := e.Value.(waitlistProcess)
+				if node == unblockedProcess{
+					(*rcbArray)[resourceIndex].Waitlist.Remove(e)
+					removed = true
+				}
+			}
+			
+			indexString := strconv.Itoa(unblockedProcess.Index)
+			unitString := strconv.Itoa(unblockedProcess.requestedUnits)
+			if removed{
+				fmt.Println("Process: " + indexString + " Units: " + unitString + " SUCCESSFUL removal from WL")
+			}else{
+				fmt.Println("Process: " + indexString + " Units: " + unitString + " FAILED removal from WL")
+			}
+
 			//insert j into RL
-			var newPrio int = (*pcbArray)[unblockedProcess.index].Priority 
-			(*readyList)[newPrio].Append(unblockedProcess.Index)
+			var newPrio int = (*pcbArray)[unblockedProcess.Index].Priority 
+			(*readyList)[newPrio] = append((*readyList)[newPrio], unblockedProcess.Index)
 		}else{
 			break
 		}
@@ -156,7 +172,7 @@ func scheduler(readyList [][]int){
 			return 
 		}
 	}
-	fmt.Println("No highest priority ready process found")
+	fmt.Println("SCHEDULER ERROR: No highest priority ready process found")
 }
 
 //Init: n = amt of priority levels | u_num = the amt of units for resource_num
@@ -201,7 +217,9 @@ func in(n string, u0 string, u1 string, u2 string, u3 string, pcbArray *[]*pcb, 
 			Inventory: int3,
 			Waitlist: list.New(),
 		}
-
+		
+		lenString := strconv.Itoa(len(*rcbArray))
+		fmt.Println("size of rcb array: " + lenString)
 		(*rcbArray)[0] = &rcb0
 		(*rcbArray)[1] = &rcb1
 		(*rcbArray)[2] = &rcb2
@@ -221,6 +239,7 @@ func in(n string, u0 string, u1 string, u2 string, u3 string, pcbArray *[]*pcb, 
 		//intializes the pcbArray
 		create(&readyList, pcbArray, "0")
 		fmt.Println("Successfully initialized!")
+		scheduler(readyList)
 		return readyList
 	}
 }
@@ -261,7 +280,7 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string){
 				Parent: runningIndex,
 				Priority: priority,
 				Children: list.New(),
-				Resources: list.List([*&resourceInfo{} ]),
+				Resources: list.New(),
 			}
 	
 			//updating the running process children list 
@@ -284,6 +303,7 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string){
 			fmt.Println("Process: " + strconv.Itoa(emptyPCB) + " created successfully!")
 		}
 	}
+	scheduler(*readyList)
 }
 
 //TODO
@@ -320,6 +340,7 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		(*pcbArray)[runningIndex].Resources.PushBack(resourceNum)
 		// display: “resource r allocated”
 		fmt.Println("Resource: " + r + " allocated!")
+		scheduler(*readyList)
 		return 1 //1 is successfully allocated
 	}else{
 		// state of i = blocked -> state in pcb becomes 0 
@@ -332,10 +353,10 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		// display: “process i blocked”
 		runningIndexString := strconv.Itoa(runningIndex)
 		fmt.Println("Process: " + runningIndexString + " allocated!")
-		
-		scheduler(*readyList)
+		scheduler(*readyList)	
 		return 0 //0 is blocked
 	}
+	
 	
 }
 
@@ -363,22 +384,28 @@ func release(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		(*rcbArray)[resourceNum].State = state + requestedUnits
 	}else{
 		//remove process j (head of WL) from the WL bc no longer blocked by process i -> joins RL
-		waitListRemoval(rcbArray, resourceNum, pcbArray, readyList)
-		
-		scheduler(readyList)
+		waitListRemoval(rcbArray, resourceNum, requestedUnits, pcbArray, readyList)
 	}
+	scheduler(*readyList)
+	return 1
 }	
 
 //Timeout
-func timeout(){
-	
+func timeout(readyList *[][]int){
+	//store the og running process
+	var runningProcess int = findRunningProcess(readyList)
+	//iterate from n-1 to 1, and find the first array that isn't nil
+	var runningPriority int;
+	for i:=(len(*readyList)-1); i>0; i++{
+		if (*readyList)[i] != nil{
+			runningPriority = i
+		}
+	}
+	//remove the running process and append to the back on the same prio level same array
+	readyListRemoval(readyList)
+	(*readyList)[runningPriority] = append((*readyList)[runningPriority], runningProcess)
+	scheduler(*readyList)
 }
-
-
-
-
-
-
 
 
 func main() {
@@ -402,7 +429,7 @@ func main() {
 	//list of rcbs
 	var rcbArray []*rcb 
 
-	rcbArray = make([]*rcb, 0, 4)
+	rcbArray = make([]*rcb, 4)
 
 	for i := range rcbArray {
 	  rcbArray[i] = nil
@@ -448,7 +475,7 @@ func main() {
 			if(len(input) == 2){
 				p1 = input[1]
 
-				create(&rl, pcbArray, p1 )
+				create(&rl, &pcbArray, p1 )
 			}else{
 				fmt.Println("Not enough params for the cmd: cr")
 			}
@@ -468,7 +495,9 @@ func main() {
 				p1 = input[1]	
 				p2 = input[2]
 				
-				request(p1, p2)
+				if request(&rl, &pcbArray, &rcbArray, p1, p2) == -1{
+					fmt.Println("ERROR: failed to request")
+				}
 			}else{
 				fmt.Println("Not enough params for the cmd: rq")
 			}
@@ -480,7 +509,9 @@ func main() {
 				p1 = input[1]	
 				p2 = input[2]
 				
-				release(p1, p2)
+				if release(&rl, &pcbArray, &rcbArray, p1, p2) == -1{
+					fmt.Println("ERROR: failed to release")
+				}
 			}else{
 				fmt.Println("Not enough params for the cmd: rl")
 			}
@@ -488,14 +519,14 @@ func main() {
 			fmt.Println("Command: " + cmd)
 
 			if(len(input) == 1){
-				timeout()
+				timeout(&rl)
 			}else{
 				fmt.Println("Not enough params for the cmd: rq")
 			}
 		case "id":
 			fmt.Println("Command: " + cmd)
 			if(len(input) == 1){
-				in("3", "1", "1", "2", "3")
+				in("3", "1", "1", "2", "3", &pcbArray, &rcbArray)
 			}else{
 				fmt.Println("Id doesn't need any params")
 			}
@@ -504,7 +535,13 @@ func main() {
 		default:
 			fmt.Println("NOT A VALID COMMAND")
 		}
+		
+		var runningProcess int = findRunningProcess(&rl)
+		runningString := strconv.Itoa(runningProcess)
 
+		fmt.Println("=================================")
+		fmt.Println("Running Process: " + runningString)
+		fmt.Println("=================================")
 
 
 	}
