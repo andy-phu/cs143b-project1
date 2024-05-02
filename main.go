@@ -187,11 +187,11 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 	//	}
 	//}
 
-	flag := false
+	rlFlag := false
 	//remove j from RL
 	//check if j is in RL, if so remove
 	for x := (len(*readyList) - 1); x >= 0; x-- {
-		if flag {
+		if rlFlag {
 			break
 		}
 		//check each innerArray for the child int
@@ -210,16 +210,17 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 					(*readyList)[x][y] = -1
 				}
 				fmt.Println("Child removed from RL")
-				flag = true
+				rlFlag = true
+				break
 			}
 		}
 	}
 
-	flag := false
+	wlFlag := false
 	//remove j from WL if exists
 	//iterate through the RCB Array and search
 	for x := 0; x < 4; x++ {
-		if flag {
+		if wlFlag {
 			break
 		}
 		for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
@@ -227,7 +228,7 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 			if actualValue.ProcessIndex == childInt {
 				(*rcbArray)[x].Waitlist.Remove(e)
 				fmt.Println("Child removed from WL")
-				flag = true
+				wlFlag = true
 				break
 			}
 		}
@@ -288,6 +289,21 @@ func in(n string, u0 string, u1 string, u2 string, u3 string, pcbArray *[]*pcb, 
 	var int3, _ = strconv.Atoi(u3)
 
 	prioLevels, _ := strconv.Atoi(n)
+
+	//clear everything back to default
+	EMPTYPCB = 0
+
+	(*pcbArray) = make([]*pcb, 16)
+
+	for i := range *pcbArray {
+		(*pcbArray)[i] = nil
+	}
+
+	(*rcbArray) = make([]*rcb, 4)
+
+	for i := range *rcbArray {
+		(*rcbArray)[i] = nil
+	}
 
 	if prioLevels <= 0 {
 		fmt.Println("ERROR: must have at least 1 priority level")
@@ -414,7 +430,8 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 		fmt.Println("DESTROY ERROR: j: " + j + " doesn't exist in the running process")
 		return -1
 	}
-
+	//initialize back to
+	DELETEDPROCESSCOUNTER = 0
 	//for all k in children of j : destroy(k)
 	//recursively destroy j and it's descendants
 	//pass in the head of the children list and keep going til there's an empty list and return
@@ -432,7 +449,11 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 	}
 	//remove j from RL
 	//check if j is in RL, if so remove
+	rlFlag := false
 	for x := (len(*readyList) - 1); x >= 0; x-- {
+		if rlFlag {
+			break
+		}
 		//check each innerArray for the child int
 		for y := 0; y < 16; y++ {
 			if (*readyList)[x][y] == childInt {
@@ -449,18 +470,25 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 					(*readyList)[x][y] = -1
 				}
 				fmt.Println("Child removed from RL")
+				rlFlag = true
+				break
 			}
 		}
 	}
 
+	wlFlag := false
 	//remove j from WL if exists
 	//iterate through the RCB Array and search
 	for x := 0; x < 4; x++ {
+		if wlFlag {
+			break
+		}
 		for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
 			actualValue := e.Value.(*waitlistProcess)
 			if actualValue.ProcessIndex == childInt {
 				(*rcbArray)[x].Waitlist.Remove(e)
 				fmt.Println("Child removed from WL")
+				wlFlag = true
 				break
 			}
 		}
@@ -471,6 +499,8 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 
 	//free PCB of j, and index of pcb can never be reused
 	(*pcbArray)[childInt] = nil
+	//deleted the pcb of itself, the child
+	DELETEDPROCESSCOUNTER++
 	counterString := strconv.Itoa(DELETEDPROCESSCOUNTER)
 
 	//display: “n processes destroyed”
@@ -639,6 +669,10 @@ func main() {
 			}
 		case "cr":
 			fmt.Println("Command: " + cmd)
+			if rl == nil {
+				fmt.Println("ERROR: have to run in/id first")
+				break
+			}
 			if len(input) == 2 {
 				p1 = input[1]
 				priorityInt, _ := strconv.Atoi(p1)
@@ -653,6 +687,11 @@ func main() {
 			}
 		case "de":
 			fmt.Println("Command: " + cmd)
+			if rl == nil {
+				fmt.Println("ERROR: have to run in/id first")
+				break
+			}
+
 			if len(input) == 2 {
 				p1 = input[1]
 
@@ -664,6 +703,10 @@ func main() {
 			}
 		case "rq":
 			fmt.Println("Command: " + cmd)
+			if rl == nil {
+				fmt.Println("ERROR: have to run in/id first")
+				break
+			}
 
 			if len(input) == 3 {
 				p1 = input[1]
@@ -686,6 +729,10 @@ func main() {
 
 		case "rl":
 			fmt.Println("Command: " + cmd)
+			if rl == nil {
+				fmt.Println("ERROR: have to run in/id first")
+				break
+			}
 
 			if len(input) == 3 {
 				p1 = input[1]
@@ -715,6 +762,10 @@ func main() {
 			}
 		case "to":
 			fmt.Println("Command: " + cmd)
+			if rl == nil {
+				fmt.Println("ERROR: have to run in/id first")
+				break
+			}
 
 			if len(input) == 1 {
 				timeout(&rl)
