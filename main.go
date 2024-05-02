@@ -9,6 +9,10 @@ import (
 	"strings"
 )
 
+// globals
+var EMPTYPCB int = 0
+var DELETEDPROCESSCOUNTER int = 0
+
 type pcb struct {
 	State     int
 	Parent    int
@@ -24,7 +28,7 @@ type rcb struct {
 }
 
 type waitlistProcess struct {
-	Index          int //index of the process in the pcb
+	ProcessIndex   int //index of the process in the pcb
 	requestedUnits int
 }
 
@@ -128,9 +132,9 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 			(*rcbArray)[resourceIndex].State = (*rcbArray)[resourceIndex].State - unblockedProcess.requestedUnits
 			// insert (r, k) into j.resources
 			newResource := &resourceInfo{ResourceIndex: resourceIndex, Units: requestedUnits}
-			(*pcbArray)[unblockedProcess.Index].Resources.PushBack(newResource)
+			(*pcbArray)[unblockedProcess.ProcessIndex].Resources.PushBack(newResource)
 			// j.state = ready
-			(*pcbArray)[unblockedProcess.Index].State = 1
+			(*pcbArray)[unblockedProcess.ProcessIndex].State = 1
 			// remove (j, k) from r.waitlist
 			var removed bool = false
 			for e := (*rcbArray)[resourceIndex].Waitlist.Front(); e != nil; e = e.Next() {
@@ -141,7 +145,7 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 				}
 			}
 
-			indexString := strconv.Itoa(unblockedProcess.Index)
+			indexString := strconv.Itoa(unblockedProcess.ProcessIndex)
 			unitString := strconv.Itoa(unblockedProcess.requestedUnits)
 			if removed {
 				fmt.Println("Process: " + indexString + " Units: " + unitString + " SUCCESSFUL removal from WL")
@@ -150,10 +154,10 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 			}
 
 			//insert j into RL
-			var newPrio int = (*pcbArray)[unblockedProcess.Index].Priority
+			var newPrio int = (*pcbArray)[unblockedProcess.ProcessIndex].Priority
 
 			emptySlot := findEmptySlot((*readyList)[newPrio])
-			(*readyList)[newPrio][emptySlot] = unblockedProcess.Index
+			(*readyList)[newPrio][emptySlot] = unblockedProcess.ProcessIndex
 		} else {
 			break
 		}
@@ -173,9 +177,60 @@ func checkChild(pcbArray *[]*pcb, parent int, child int) bool {
 	return false
 }
 
-var deletedProcessCounter int = 0
+func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, childInt int) {
+	//remove j from parent’s list of children
+	//iterate through running process children list and remove the e
+	//for e := (*pcbArray)[currIndex].Children.Front(); e != nil; e = e.Next() {
+	//	if e.Value.(int) == childInt {
+	//		(*pcbArray)[currIndex].Children.Remove(e)
+	//	}
+	//}
 
-func descendantDeletion(children *list.List, pcbArray *[]*pcb) {
+	//remove j from RL
+	//check if j is in RL, if so remove
+	for x := (len(*readyList) - 1); x >= 0; x-- {
+		//check each innerArray for the child int
+		for y := 0; y < 16; y++ {
+			if (*readyList)[x][y] == childInt {
+				//if it's in the front -> shift
+				if y == 0 {
+					for z := 1; z < 16; z++ {
+						(*readyList)[x][z-1] = (*readyList)[x][z]
+					}
+				} else if y > 0 && y < 15 { //middle -> shift right of middle to the left
+					for z := y + 1; z < 16; z++ {
+						(*readyList)[x][z-1] = (*readyList)[x][z]
+					}
+				} else if (*readyList)[x][y+1] == -1 || y == 15 { //end -> assign -1 to it
+					(*readyList)[x][y] = -1
+				}
+				fmt.Println("Child removed from RL")
+			}
+		}
+	}
+
+	//remove j from WL if exists
+	//iterate through the RCB Array and search
+	for x := 0; x < 4; x++ {
+		for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
+			actualValue := e.Value.(*waitlistProcess)
+			if actualValue.ProcessIndex == childInt {
+				(*rcbArray)[x].Waitlist.Remove(e)
+				fmt.Println("Child removed from WL")
+				break
+			}
+		}
+	}
+
+	//release all resources of j
+	(*pcbArray)[childInt].Resources = list.New()
+
+	//free PCB of j, and index of pcb can never be reused
+	(*pcbArray)[childInt] = nil
+}
+
+// recursively go through all children and release everything
+func descendantDeletion(children *list.List, pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int) {
 	//base case: children list is nil return
 	if children == nil {
 		return
@@ -183,9 +238,10 @@ func descendantDeletion(children *list.List, pcbArray *[]*pcb) {
 	//iterate through the children list and recursively call descendant deletion
 	for e := children.Front(); e != nil; e = e.Next() {
 		childIndex := e.Value.(int)
-		descendantDeletion((*pcbArray)[childIndex].Children, pcbArray)
+		descendantDeletion((*pcbArray)[childIndex].Children, pcbArray, rcbArray, readyList)
+		releaseEverything(pcbArray, rcbArray, readyList, childIndex)
 		children.Remove(e)
-		deletedProcessCounter++
+		DELETEDPROCESSCOUNTER++
 	}
 	return
 }
@@ -268,6 +324,7 @@ func in(n string, u0 string, u1 string, u2 string, u3 string, pcbArray *[]*pcb, 
 
 		//intializes the pcbArray
 		create(&readyList, pcbArray, "0")
+		EMPTYPCB++
 		fmt.Println("Successfully initialized!")
 		//scheduler(readyList)
 		return readyList
@@ -278,7 +335,6 @@ func in(n string, u0 string, u1 string, u2 string, u3 string, pcbArray *[]*pcb, 
 func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 	//allocate new PCB[j]
 	//getes the empty slot to insert the new process pcb
-	emptyPCB := findEmptyPCB(*pcbArray)
 	runningIndex := findRunningProcess(readyList)
 	priority, _ := strconv.Atoi(p)
 
@@ -301,7 +357,7 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 	} else {
 		//if there is a running process it is the one that calls create
 		//assign the new pcb to the running process's child and vice versa new pcb parent = running
-		if emptyPCB == -1 {
+		if EMPTYPCB == 16 {
 			fmt.Println("ERROR: empty slot is -1, too many processes")
 			return
 		} else { //running process creates a child
@@ -314,10 +370,10 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 			}
 
 			//updating the running process children list
-			(*pcbArray)[runningIndex].Children.PushBack(emptyPCB)
+			(*pcbArray)[runningIndex].Children.PushBack(EMPTYPCB)
 
 			//add the new process to pcb array
-			(*pcbArray)[emptyPCB] = &newPCB
+			(*pcbArray)[EMPTYPCB] = &newPCB
 
 			if priority == 0 {
 				fmt.Println("ERROR: not init -> cannot add process in priority level 0")
@@ -327,9 +383,9 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 			emptySlot := findEmptySlot((*readyList)[priority])
 
 			//add to readylist
-			(*readyList)[priority][emptySlot] = emptyPCB
+			(*readyList)[priority][emptySlot] = EMPTYPCB
 
-			fmt.Println("Process: " + strconv.Itoa(emptyPCB) + " created successfully!")
+			fmt.Println("Process: " + strconv.Itoa(EMPTYPCB) + " created successfully!")
 		}
 	}
 	scheduler(*readyList)
@@ -349,7 +405,7 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 	//recursively destroy j and it's descendants
 	//pass in the head of the children list and keep going til there's an empty list and return
 	//after clearing all the children make it a new list
-	descendantDeletion((*pcbArray)[childInt].Children, pcbArray)
+	descendantDeletion((*pcbArray)[childInt].Children, pcbArray, rcbArray, readyList)
 
 	(*pcbArray)[childInt].Children = list.New()
 
@@ -386,10 +442,12 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 	//remove j from WL if exists
 	//iterate through the RCB Array and search
 	for x := 0; x < 4; x++ {
-		for e := (*rcbArray)[x].Waitlist.Front(); e.Next() != nil; e = e.Next() {
-			if e.Value.(waitlistProcess).Index == childInt {
+		for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
+			actualValue := e.Value.(*waitlistProcess)
+			if actualValue.ProcessIndex == childInt {
 				(*rcbArray)[x].Waitlist.Remove(e)
 				fmt.Println("Child removed from WL")
+				break
 			}
 		}
 	}
@@ -399,7 +457,7 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 
 	//free PCB of j, and index of pcb can never be reused
 	(*pcbArray)[childInt] = nil
-	counterString := strconv.Itoa(deletedProcessCounter)
+	counterString := strconv.Itoa(DELETEDPROCESSCOUNTER)
 
 	//display: “n processes destroyed”
 	fmt.Println(counterString + " process recursively destroyed")
@@ -440,7 +498,7 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		//remove i (head of RL) from RL
 		readyListRemoval(readyList)
 		//add (i,k) to waitlist of r
-		newResource := &resourceInfo{ResourceIndex: resourceNum, Units: requestedUnits}
+		newResource := &waitlistProcess{ProcessIndex: resourceNum, requestedUnits: requestedUnits}
 		(*rcbArray)[resourceNum].Waitlist.PushBack(newResource)
 		// display: “process i blocked”
 		runningIndexString := strconv.Itoa(runningIndex)
@@ -568,8 +626,13 @@ func main() {
 			fmt.Println("Command: " + cmd)
 			if len(input) == 2 {
 				p1 = input[1]
-
+				priorityInt, _ := strconv.Atoi(p1)
+				if priorityInt < 0 || priorityInt > len(rl) {
+					fmt.Println("ERROR_CR: the priority number is out of range")
+					break
+				}
 				create(&rl, &pcbArray, p1)
+				EMPTYPCB++
 			} else {
 				fmt.Println("Not enough params for the cmd: cr")
 			}
@@ -591,10 +654,10 @@ func main() {
 				p1 = input[1]
 				p2 = input[2]
 
-				priority, _ := strconv.Atoi(p1)
+				resourceNum, _ := strconv.Atoi(p1)
 
-				if priority < 0 || priority >= len(rl) {
-					fmt.Println("ERROR: priority not in the right range")
+				if resourceNum < 0 || resourceNum > 3 {
+					fmt.Println("ERROR_RQ: resource num not in the right range")
 					break
 				}
 
@@ -613,8 +676,24 @@ func main() {
 				p1 = input[1]
 				p2 = input[2]
 
+				resourceNum, _ := strconv.Atoi(p1)
+				requestedUnits, _ := strconv.Atoi(p2)
+				inventory := (rcbArray)[resourceNum].Inventory
+				state := (rcbArray)[resourceNum].State
+
+				if resourceNum < 0 || resourceNum > 3 {
+					fmt.Println("ERROR_RQ: resource num not in the right range")
+					break
+				}
+
+				if requestedUnits < 0 || requestedUnits > inventory || requestedUnits > state {
+					fmt.Println("Process -1 running")
+					break
+				}
+
 				if release(&rl, &pcbArray, &rcbArray, p1, p2) == -1 {
 					fmt.Println("ERROR: failed to release")
+					fmt.Println("Process -1 running")
 				}
 			} else {
 				fmt.Println("Not enough params for the cmd: rl")
