@@ -99,6 +99,7 @@ func readyListRemoval(readyList *[][]int) {
 			for j := 1; j < 16; j++ {
 				(*readyList)[i][j-1] = (*readyList)[i][j]
 			}
+			break
 		}
 	}
 }
@@ -186,9 +187,13 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 	//	}
 	//}
 
+	flag := false
 	//remove j from RL
 	//check if j is in RL, if so remove
 	for x := (len(*readyList) - 1); x >= 0; x-- {
+		if flag {
+			break
+		}
 		//check each innerArray for the child int
 		for y := 0; y < 16; y++ {
 			if (*readyList)[x][y] == childInt {
@@ -205,18 +210,24 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 					(*readyList)[x][y] = -1
 				}
 				fmt.Println("Child removed from RL")
+				flag = true
 			}
 		}
 	}
 
+	flag := false
 	//remove j from WL if exists
 	//iterate through the RCB Array and search
 	for x := 0; x < 4; x++ {
+		if flag {
+			break
+		}
 		for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
 			actualValue := e.Value.(*waitlistProcess)
 			if actualValue.ProcessIndex == childInt {
 				(*rcbArray)[x].Waitlist.Remove(e)
 				fmt.Println("Child removed from WL")
+				flag = true
 				break
 			}
 		}
@@ -229,6 +240,7 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 	(*pcbArray)[childInt] = nil
 }
 
+// starts off with j's child
 // recursively go through all children and release everything
 func descendantDeletion(children *list.List, pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int) {
 	//base case: children list is nil return
@@ -236,11 +248,13 @@ func descendantDeletion(children *list.List, pcbArray *[]*pcb, rcbArray *[]*rcb,
 		return
 	}
 	//iterate through the children list and recursively call descendant deletion
-	for e := children.Front(); e != nil; e = e.Next() {
+	for e := children.Front(); e != nil; {
 		childIndex := e.Value.(int)
+		next := e.Next()
 		descendantDeletion((*pcbArray)[childIndex].Children, pcbArray, rcbArray, readyList)
 		releaseEverything(pcbArray, rcbArray, readyList, childIndex)
 		children.Remove(e)
+		e = next
 		DELETEDPROCESSCOUNTER++
 	}
 	return
@@ -487,7 +501,8 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		// state of r = allocated
 		(*rcbArray)[resourceNum].State = state - requestedUnits
 		// insert r into list of resources of process i
-		(*pcbArray)[runningIndex].Resources.PushBack(resourceNum)
+		newResource := &resourceInfo{ResourceIndex: resourceNum, Units: requestedUnits}
+		(*pcbArray)[runningIndex].Resources.PushBack(newResource)
 		// display: “resource r allocated”
 		fmt.Println("Resource: " + r + " allocated!")
 		scheduler(*readyList)
@@ -498,8 +513,8 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		//remove i (head of RL) from RL
 		readyListRemoval(readyList)
 		//add (i,k) to waitlist of r
-		newResource := &waitlistProcess{ProcessIndex: resourceNum, requestedUnits: requestedUnits}
-		(*rcbArray)[resourceNum].Waitlist.PushBack(newResource)
+		newWaitlist := &waitlistProcess{ProcessIndex: runningIndex, requestedUnits: requestedUnits}
+		(*rcbArray)[resourceNum].Waitlist.PushBack(newWaitlist)
 		// display: “process i blocked”
 		runningIndexString := strconv.Itoa(runningIndex)
 		fmt.Println("Process: " + runningIndexString + " blocked!")
