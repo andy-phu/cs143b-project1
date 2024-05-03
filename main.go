@@ -17,7 +17,7 @@ var first int = 0
 type pcb struct {
 	State     int
 	Parent    int
-	Priority  int //1 to n-1
+	Priority  int //1 to n -1
 	Children  *list.List
 	Resources *list.List
 }
@@ -117,7 +117,7 @@ func resourceListRemoval(pcbArray *[]*pcb, pcbIndex int, resourceIndex int) {
 		if frontResourceIndex == resourceIndex {
 			(*pcbArray)[pcbIndex].Resources.Remove(e)
 			//eString := strconv.Itoa(frontResourceIndex)
-			//fmt.Println("Removing resource index: " + eString)
+			//fmt.Printf("Removing resource index: " + eString)
 			break
 		}
 
@@ -127,13 +127,15 @@ func resourceListRemoval(pcbArray *[]*pcb, pcbIndex int, resourceIndex int) {
 func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pcbArray *[]*pcb, readyList *[][]int) {
 	for {
 		// while (r.waitlist != empty and r.state > 0)
-		if ((*rcbArray)[resourceIndex].Waitlist == nil) || ((*rcbArray)[resourceIndex].State <= 0) {
+		if ((*rcbArray)[resourceIndex].Waitlist.Len() == 0) || ((*rcbArray)[resourceIndex].State <= 0) {
 			break
 		}
 
 		// get next (j, k) from r.waitlist, j is the process index and k is the amt of resources requested by process
-		var unblockedProcess waitlistProcess = (*rcbArray)[resourceIndex].Waitlist.Front().Value.(waitlistProcess)
-
+		unblockedProcess, ok := (*rcbArray)[resourceIndex].Waitlist.Front().Value.(*waitlistProcess)
+		if !ok {
+			panic(ok)
+		}
 		// if (r.state >= k)
 		if (*rcbArray)[resourceIndex].State >= unblockedProcess.requestedUnits {
 			// r.state = r.state - k
@@ -144,21 +146,13 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 			// j.state = ready
 			(*pcbArray)[unblockedProcess.ProcessIndex].State = 1
 			// remove (j, k) from r.waitlist
-			var removed bool = false
+			//var removed bool = false
 			for e := (*rcbArray)[resourceIndex].Waitlist.Front(); e != nil; e = e.Next() {
-				node := e.Value.(waitlistProcess)
-				if node == unblockedProcess {
+				node := e.Value.(*waitlistProcess)
+				if unblockedProcess == node {
 					(*rcbArray)[resourceIndex].Waitlist.Remove(e)
-					removed = true
+					//removed = true
 				}
-			}
-
-			indexString := strconv.Itoa(unblockedProcess.ProcessIndex)
-			unitString := strconv.Itoa(unblockedProcess.requestedUnits)
-			if removed {
-				fmt.Println("Process: " + indexString + " Units: " + unitString + " SUCCESSFUL removal from WL")
-			} else {
-				fmt.Println("Process: " + indexString + " Units: " + unitString + " FAILED removal from WL")
 			}
 
 			//insert j into RL
@@ -169,6 +163,7 @@ func waitListRemoval(rcbArray *[]*rcb, resourceIndex int, requestedUnits int, pc
 		} else {
 			break
 		}
+
 	}
 
 }
@@ -213,10 +208,10 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 					for z := y + 1; z < 16; z++ {
 						(*readyList)[x][z-1] = (*readyList)[x][z]
 					}
-				} else if (*readyList)[x][y+1] == -1 || y == 15 { //end -> assign -1 to it
+				} else if (*readyList)[x][y+1] == -1 || y == 15 { //end -> assign  -1 to it
 					(*readyList)[x][y] = -1
 				}
-				//fmt.Println("Child removed from RL")
+				//fmt.Printf("Child removed from RL")
 				rlFlag = true
 				break
 			}
@@ -234,10 +229,21 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 			actualValue := e.Value.(*waitlistProcess)
 			if actualValue.ProcessIndex == childInt {
 				(*rcbArray)[x].Waitlist.Remove(e)
-				//fmt.Println("Child removed from WL")
+				//fmt.Printf("Child removed from WL")
 				wlFlag = true
 				break
 			}
+		}
+	}
+	//check if j is holding a resource and if so remove from the rcb
+	if (*pcbArray)[childInt].Resources.Len() != 0 {
+		//iterate through the resources and get the resource index
+		//and add back on the units held into the rcb state for that certain index
+		for x := (*pcbArray)[childInt].Resources.Front(); x != nil; x = x.Next() {
+			rcbIndex := x.Value.(*resourceInfo).ResourceIndex
+			(*rcbArray)[rcbIndex].State += x.Value.(*resourceInfo).Units
+			//update the waitlist
+			waitListRemoval(rcbArray, rcbIndex, x.Value.(*resourceInfo).Units, pcbArray, readyList)
 		}
 	}
 
@@ -246,6 +252,7 @@ func releaseEverything(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, c
 
 	//free PCB of j, and index of pcb can never be reused
 	(*pcbArray)[childInt] = nil
+
 }
 
 // starts off with j's child
@@ -261,6 +268,10 @@ func descendantDeletion(children *list.List, pcbArray *[]*pcb, rcbArray *[]*rcb,
 		next := e.Next()
 		descendantDeletion((*pcbArray)[childIndex].Children, pcbArray, rcbArray, readyList)
 		releaseEverything(pcbArray, rcbArray, readyList, childIndex)
+
+		//after releasing the child int from all the data structures, note the rcbArray indexes that were released
+		//seperate function to check what you can remove from the waitlist
+
 		children.Remove(e)
 		e = next
 		DELETEDPROCESSCOUNTER++
@@ -276,42 +287,25 @@ func scheduler(readyList [][]int) {
 		//non null means that the running process is there
 		if (readyList)[i][0] != -1 {
 			head := strconv.Itoa(readyList[i][0])
-			//fmt.Println("Process: " + head + " running")
-			fmt.Println(head)
+			//fmt.Printf("Process: " + head + " running")
+			fmt.Printf("%s ", head)
 			return
 		}
 	}
 
-	//fmt.Println("Process: 0 running")
-	fmt.Println("0")
+	//fmt.Printf("Process: 0 running")
+	fmt.Printf("0 ")
 }
 
-//func scheduler(fp *os.File, readyList [][]int) {
-//	var n int = len(readyList)
-//
-//	//from n to 1 bc 0 doesnt have a running reserved for init
-//	for i := n - 1; i > 0; i-- {
-//		//non null means that the running process is there
-//		if (readyList)[i][0] != -1 {
-//			head := strconv.Itoa(readyList[i][0])
-//			fmt.Fprintf(fp, "Running process: %s\n", head)
-//
-//			return
-//		}
-//	}
-//
-//	fmt.Println("Process: 0 running")
-//}
-
 // Init: n = amt of priority levels | u_num = the amt of units for resource_num
-// Notes: creates ready list with n priority levels 0 to n-1, and returns it
+// Notes: creates ready list with n priority levels 0 to n -1, and returns it
 func in(n, u0, u1, u2, u3 string, pcbArray *[]*pcb, rcbArray *[]*rcb) [][]int {
 	//var cmdLine string = fmt.Sprintf("p1: %s, p2: %s, p3: %s, p4: %s, p5: %s", n, u0, u1, u2, u3)
-	//fmt.Println("all of the inputs for in: " + cmdLine)
+	//fmt.Printf("all of the inputs for in: " + cmdLine)
 
 	//to print a line before each output after the first one
 	if first > 0 {
-		fmt.Println()
+		fmt.Printf("\n")
 	}
 	first++
 
@@ -338,7 +332,8 @@ func in(n, u0, u1, u2, u3 string, pcbArray *[]*pcb, rcbArray *[]*rcb) [][]int {
 	}
 
 	if prioLevels <= 0 {
-		fmt.Println("ERROR: must have at least 1 priority level")
+		//fmt.Printf("ERROR: must have at least 1 priority level")
+		fmt.Printf("-1 ")
 		return nil
 	} else {
 		//initializes the rcb array with the params
@@ -367,7 +362,7 @@ func in(n, u0, u1, u2, u3 string, pcbArray *[]*pcb, rcbArray *[]*rcb) [][]int {
 		}
 
 		//lenString := strconv.Itoa(len(*rcbArray))
-		//fmt.Println("size of rcb array: " + lenString)
+		//fmt.Printf("size of rcb array: " + lenString)
 		(*rcbArray)[0] = &rcb0
 		(*rcbArray)[1] = &rcb1
 		(*rcbArray)[2] = &rcb2
@@ -387,7 +382,7 @@ func in(n, u0, u1, u2, u3 string, pcbArray *[]*pcb, rcbArray *[]*rcb) [][]int {
 		//intializes the pcbArray
 		create(&readyList, pcbArray, "0")
 		EMPTYPCB++
-		//fmt.Println("Successfully initialized!")
+		//fmt.Printf("Successfully initialized!")
 		//scheduler(readyList)
 		return readyList
 	}
@@ -420,8 +415,8 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 		//if there is a running process it is the one that calls create
 		//assign the new pcb to the running process's child and vice versa new pcb parent = running
 		if EMPTYPCB == 16 {
-			//fmt.Println("ERROR: empty slot is -1, too many processes")
-			fmt.Println("-1")
+			//fmt.Printf("ERROR: empty slot is  -1, too many processes")
+			fmt.Printf("-1 ")
 			return
 		} else { //running process creates a child
 			var newPCB pcb = pcb{
@@ -439,8 +434,8 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 			(*pcbArray)[EMPTYPCB] = &newPCB
 
 			if priority == 0 {
-				//fmt.Println("ERROR: not init -> cannot add process in priority level 0")
-				fmt.Println("-1")
+				//fmt.Printf("ERROR: not init -> cannot add process in priority level 0")
+				fmt.Printf("-1 ")
 				return
 			}
 
@@ -449,7 +444,7 @@ func create(readyList *[][]int, pcbArray *[]*pcb, p string) {
 			//add to readylist
 			(*readyList)[priority][emptySlot] = EMPTYPCB
 
-			//fmt.Println("Process: " + strconv.Itoa(EMPTYPCB) + " created successfully!")
+			//fmt.Printf("Process: " + strconv.Itoa(EMPTYPCB) + " created successfully!")
 		}
 	}
 
@@ -470,7 +465,7 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 			releaseEverything(pcbArray, rcbArray, readyList, childInt)
 		}
 
-		//fmt.Println("DESTROY ERROR: j: " + j + " doesn't exist in the running process")
+		//fmt.Printf("DESTROY ERROR: j: " + j + " doesn't exist in the running process")
 		return -1
 	}
 	//initialize back to
@@ -492,64 +487,8 @@ func destroy(pcbArray *[]*pcb, rcbArray *[]*rcb, readyList *[][]int, j string) i
 	}
 
 	releaseEverything(pcbArray, rcbArray, readyList, childInt)
-	////remove j from RL
-	////check if j is in RL, if so remove
-	//rlFlag := false
-	//for x := (len(*readyList) - 1); x >= 0; x-- {
-	//	if rlFlag {
-	//		break
-	//	}
-	//	//check each innerArray for the child int
-	//	for y := 0; y < 16; y++ {
-	//		if (*readyList)[x][y] == childInt {
-	//			//if it's in the front -> shift
-	//			if y == 0 {
-	//				for z := 1; z < 16; z++ {
-	//					(*readyList)[x][z-1] = (*readyList)[x][z]
-	//				}
-	//			} else if y > 0 && y < 15 { //middle -> shift right of middle to the left
-	//				for z := y + 1; z < 16; z++ {
-	//					(*readyList)[x][z-1] = (*readyList)[x][z]
-	//				}
-	//			} else if (*readyList)[x][y+1] == -1 || y == 15 { //end -> assign -1 to it
-	//				(*readyList)[x][y] = -1
-	//			}
-	//			fmt.Println("Child removed from RL")
-	//			rlFlag = true
-	//			break
-	//		}
-	//	}
-	//}
-	//
-	//wlFlag := false
-	////remove j from WL if exists
-	////iterate through the RCB Array and search
-	//for x := 0; x < 4; x++ {
-	//	if wlFlag {
-	//		break
-	//	}
-	//	for e := (*rcbArray)[x].Waitlist.Front(); e != nil; e = e.Next() {
-	//		actualValue := e.Value.(*waitlistProcess)
-	//		if actualValue.ProcessIndex == childInt {
-	//			(*rcbArray)[x].Waitlist.Remove(e)
-	//			fmt.Println("Child removed from WL")
-	//			wlFlag = true
-	//			break
-	//		}
-	//	}
-	//}
-	//
-	////release all resources of j
-	//(*pcbArray)[childInt].Resources = list.New()
-	//
-	////free PCB of j, and index of pcb can never be reused
-	//(*pcbArray)[childInt] = nil
-	////deleted the pcb of itself, the child
-	//DELETEDPROCESSCOUNTER++
-	//counterString := strconv.Itoa(DELETEDPROCESSCOUNTER)
-	//
 	////display: “n processes destroyed”
-	//fmt.Println(counterString + " process recursively destroyed")
+	//fmt.Printf(counterString + " process recursively destroyed")
 
 	return 1
 }
@@ -563,14 +502,14 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 	state := (*rcbArray)[resourceNum].State
 
 	if requestedUnits <= 0 {
-		//fmt.Println("ERROR: the amount of units requested has to be greater than 0")
+		//fmt.Printf("ERROR: the amount of units requested has to be greater than 0")
 		return -1
 	}
 
 	// if state of r is free
 	//num of units requested + num alr held <= initial inventory
 	//k + (inventory - state) <= inventory
-	//fails check then automatically return -1
+	//fails check then automatically return  -1
 	if requestedUnits+(inventory-state) <= inventory {
 		// state of r = allocated
 		(*rcbArray)[resourceNum].State = state - requestedUnits
@@ -578,7 +517,7 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		newResource := &resourceInfo{ResourceIndex: resourceNum, Units: requestedUnits}
 		(*pcbArray)[runningIndex].Resources.PushBack(newResource)
 		// display: “resource r allocated”
-		//fmt.Println("Resource: " + r + " allocated!")
+		//fmt.Printf("Resource: " + r + " allocated!")
 
 		return 1 //1 is successfully allocated
 	} else {
@@ -591,7 +530,7 @@ func request(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 		(*rcbArray)[resourceNum].Waitlist.PushBack(newWaitlist)
 		// display: “process i blocked”
 		//runningIndexString := strconv.Itoa(runningIndex)
-		//fmt.Println("Process: " + runningIndexString + " blocked!")
+		//fmt.Printf("Process: " + runningIndexString + " blocked!")
 
 		return 0 //0 is blocked
 	}
@@ -609,21 +548,22 @@ func release(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 	//error check: num of units <= num of units currently held
 	//k <= (inventory - state)
 	if requestedUnits > (inventory - state) {
-		//fmt.Println("ERROR: released more than the number of units currently held for resource: " + r)
+		//fmt.Printf("ERROR: released more than the number of units currently held for resource: " + r)
 		return -1
 	}
 
 	// remove r from resources list of process i
 	resourceListRemoval(pcbArray, runningIndex, resourceNum)
 
-	// if waitlist of r is empty
-	if (*rcbArray)[resourceNum].Waitlist == nil {
-		// state of r = free (state goes back to original amt of units)
-		(*rcbArray)[resourceNum].State = state + requestedUnits
-	} else {
-		//remove process j (head of WL) from the WL bc no longer blocked by process i -> joins RL
-		waitListRemoval(rcbArray, resourceNum, requestedUnits, pcbArray, readyList)
-	}
+	(*rcbArray)[resourceNum].State = state + requestedUnits
+	waitListRemoval(rcbArray, resourceNum, requestedUnits, pcbArray, readyList)
+
+	//// if waitlist of r is empty
+	//if (*rcbArray)[resourceNum].Waitlist == nil {
+	//	// state of r = free (state goes back to original amt of units)
+	//} else {
+	//	//remove process j (head of WL) from the WL bc no longer blocked by process i -> joins RL
+	//}
 
 	return 1
 }
@@ -632,7 +572,7 @@ func release(readyList *[][]int, pcbArray *[]*pcb, rcbArray *[]*rcb, r string, k
 func timeout(readyList *[][]int) {
 	//store the og running process
 	var runningProcess int = findRunningProcess(readyList)
-	//iterate from n-1 to 1, and find the first array that isn't nil
+	//iterate from n -1 to 1, and find the first array that isn't nil
 	var runningPriority int
 	for i := (len(*readyList) - 1); i > 0; i-- {
 		if (*readyList)[i][0] != -1 {
@@ -651,14 +591,14 @@ func timeout(readyList *[][]int) {
 
 func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 	cmd := c.Type
-	//fmt.Println("type is " + cmd)
+	//fmt.Printf("type is " + cmd)
 	input := c.Args
 	var p1, p2, p3, p4, p5 string
 
 	switch cmd {
 
 	case "in":
-		////fmt.Println("Command: " + cmd)
+		////fmt.Printf("Command: " + cmd)
 		if len(input) == 5 {
 			p1 = input[0]
 			p2 = input[1]
@@ -669,20 +609,20 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 			*rl = in(p1, p2, p3, p4, p5, pcbArray, rcbArray)
 			scheduler(*rl)
 		} else {
-			fmt.Println("Not enough params for the cmd: in")
+			fmt.Printf("Not enough params for the cmd: in")
 		}
 	case "cr":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if rl == nil {
-			//fmt.Println("ERROR: have to run in/id first")
+			//fmt.Printf("ERROR: have to run in/id first")
 			break
 		}
 		if len(input) == 1 {
 			p1 = input[0]
 			priorityInt, _ := strconv.Atoi(p1)
 			if priorityInt < 0 || priorityInt >= len(*rl) {
-				//fmt.Println("ERROR_CR: the priority number is out of range")
-				fmt.Println("-1")
+				//fmt.Printf("ERROR_CR: the priority number is out of range")
+				fmt.Printf("-1 ")
 				break
 			}
 			create(rl, pcbArray, p1)
@@ -690,35 +630,37 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 
 			EMPTYPCB++
 		} else {
-			//fmt.Println("Not enough params for the cmd: cr")
-			fmt.Println("-1")
+			//fmt.Printf("Not enough params for the cmd: cr")
+			fmt.Printf("-1 ")
 		}
 	case "de":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if rl == nil {
-			//fmt.Println("ERROR: have to run in/id first")
-			fmt.Println("-1")
+			//fmt.Printf("ERROR: have to run in/id first")
+			fmt.Printf("-1 ")
 			break
 		}
 
 		if len(input) == 1 {
 			p1 = input[0]
-
+			if p1 == "0" {
+				fmt.Printf("-1 ")
+			}
 			if destroy(pcbArray, rcbArray, rl, p1) == -1 {
-				//fmt.Println("Destroy Error")
-				fmt.Println("-1")
+				//fmt.Printf("Destroy Error")
+				fmt.Printf("-1 ")
 
 			} else {
 				scheduler(*rl)
 			}
 		} else {
-			//fmt.Println("Not enough params for the cmd: de")
-			fmt.Println("-1")
+			//fmt.Printf("Not enough params for the cmd: de")
+			fmt.Printf("-1 ")
 		}
 	case "rq":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if rl == nil {
-			//fmt.Println("ERROR: have to run in/id first")
+			//fmt.Printf("ERROR: have to run in/id first")
 			break
 		}
 
@@ -729,28 +671,28 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 			resourceNum, _ := strconv.Atoi(p1)
 
 			if resourceNum < 0 || resourceNum > 3 {
-				//fmt.Println("ERROR_RQ: resource num not in the right range")
-				fmt.Println("-1")
+				//fmt.Printf("ERROR_RQ: resource num not in the right range")
+				fmt.Printf("-1 ")
 				break
 			}
 
 			if request(rl, pcbArray, rcbArray, p1, p2) == -1 {
-				//fmt.Println("ERROR: failed to request")
-				fmt.Println("-1")
+				//fmt.Printf("ERROR: failed to request")
+				fmt.Printf("-1 ")
 				break
 			} else {
 				scheduler(*rl)
 			}
 		} else {
-			//fmt.Println("Not enough params for the cmd: rq")
-			fmt.Println("-1")
+			//fmt.Printf("Not enough params for the cmd: rq")
+			fmt.Printf("-1 ")
 		}
 
 	case "rl":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if rl == nil {
-			//fmt.Println("ERROR: have to run in/id first")
-			fmt.Println("-1")
+			//fmt.Printf("ERROR: have to run in/id first")
+			fmt.Printf("-1 ")
 			break
 		}
 
@@ -762,7 +704,7 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 			requestedUnits, _ := strconv.Atoi(p2)
 
 			if resourceNum < 0 || resourceNum > 3 {
-				fmt.Println("-1")
+				fmt.Printf("-1 ")
 				break
 			}
 
@@ -771,31 +713,31 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 			//state := (*rcbArray)[resourceNum].State
 
 			if requestedUnits < 0 || requestedUnits > inventory {
-				//fmt.Println("Process -1 running")
-				fmt.Println("-1")
+				//fmt.Printf("Process  -1 running")
+				fmt.Printf("-1 ")
 
 				break
 
 			}
 
 			if release(rl, pcbArray, rcbArray, p1, p2) == -1 {
-				//fmt.Println("ERROR: failed to release")
-				//fmt.Println("Process -1 running")
-				fmt.Println("-1")
+				//fmt.Printf("ERROR: failed to release")
+				//fmt.Printf("Process  -1 running")
+				fmt.Printf("-1 ")
 
 			} else {
 				scheduler(*rl)
 			}
 		} else {
-			//fmt.Println("Not enough params for the cmd: rl")
-			fmt.Println("-1")
+			//fmt.Printf("Not enough params for the cmd: rl")
+			fmt.Printf("-1 ")
 
 		}
 	case "to":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if rl == nil {
-			//fmt.Println("ERROR: have to run in/id first")
-			fmt.Println("-1")
+			//fmt.Printf("ERROR: have to run in/id first")
+			fmt.Printf("-1 ")
 
 			break
 		}
@@ -804,25 +746,25 @@ func runCommand(pcbArray *[]*pcb, rcbArray *[]*rcb, rl *[][]int, c Command) {
 			timeout(rl)
 			scheduler(*rl)
 		} else {
-			//fmt.Println("Not enough params for the cmd: rq")
-			fmt.Println("-1")
+			//fmt.Printf("Not enough params for the cmd: rq")
+			fmt.Printf("-1 ")
 
 		}
 	case "id":
-		//fmt.Println("Command: " + cmd)
+		//fmt.Printf("Command: " + cmd)
 		if len(input) == 0 {
 
 			*rl = in("3", "1", "1", "2", "3", pcbArray, rcbArray)
 
 			scheduler(*rl)
 		} else {
-			//fmt.Println("Id doesn't need any params")
-			fmt.Println("-1")
+			//fmt.Printf("Id doesn't need any params")
+			fmt.Printf("-1 ")
 		}
 	case "exit":
 		os.Exit(0)
 	default:
-		//fmt.Println("NOT A VALID COMMAND")
+		//fmt.Printf("NOT A VALID COMMAND")
 	}
 }
 
@@ -865,230 +807,7 @@ func main() {
 		command := Command{Type: parts[0], Args: parts[1:]}
 		//commands = append(commands, command)
 		runCommand(&pcbArray, &rcbArray, &rl, command)
-		//fmt.Println("You entered:", line)
+		//fmt.Printf("You entered:", line)
 	}
-
-	//fileName := "input.txt" // Replace with the actual filename
-	//
-	//file, err1 := os.Open(fileName)
-	//defer file.Close()
-	//
-	//var fp *os.File
-	//fp, err2 := os.Create("output.txt")
-	//
-	//if err1 != nil {
-	//	//fmt.Println("Error opening file:", err1)
-	//	fmt.Fprintf(fp, "Error opening file:", err1)
-	//	return
-	//}
-	//
-	//if err2 != nil {
-	//	fmt.Fprintf(fp, "Error careating file:", err2)
-	//	return
-	//}
-	//
-	//reader := bufio.NewReader(file)
-	//defer fp.Close()
-	//
-	//for {
-	//
-	//	line, err := reader.ReadString('\n')
-	//
-	//	if err == io.EOF {
-	//		break // End of file reached
-	//	}
-	//
-	//	if err != nil {
-	//		//fmt.Println("Error reading file:", err)
-	//		fmt.Fprintf(fp, "Error reading file:", err)
-	//
-	//		break
-	//	}
-	//
-	//	line = strings.TrimSpace(line)
-	//
-	//	input := strings.Split(line, " ")
-	//
-	//	// fmt.Println("Output: " + line)
-	//	// fmt.Println("Input arr:", input)
-	//	cmd = input[0]
-	//
-	//	switch cmd {
-	//
-	//	case "in":
-	//		////fmt.Println("Command: " + cmd)
-	//		if len(input) == 6 {
-	//			p1 = input[1]
-	//			p2 = input[2]
-	//			p3 = input[3]
-	//			p4 = input[4]
-	//			p5 = input[5]
-	//
-	//			rl = in(p1, p2, p3, p4, p5, &pcbArray, &rcbArray)
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			//fmt.Println("Not enough params for the cmd: in")
-	//			fmt.Fprintf(fp, "Not enough params for the cmd: in")
-	//
-	//		}
-	//	case "cr":
-	//		//fmt.Println("Command: " + cmd)
-	//		if rl == nil {
-	//			//fmt.Println("ERROR: have to run in/id first")
-	//			fmt.Fprintf(fp, "ERROR: have to run in/id first")
-	//
-	//			break
-	//		}
-	//		if len(input) == 2 {
-	//			p1 = input[1]
-	//			priorityInt, _ := strconv.Atoi(p1)
-	//			if priorityInt < 0 || priorityInt > len(rl) {
-	//				//fmt.Println("ERROR_CR: the priority number is out of range")
-	//				fmt.Fprintf(fp, "ERROR_CR: the priority number is out of range")
-	//				break
-	//			}
-	//			create(&rl, &pcbArray, p1)
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//			EMPTYPCB++
-	//		} else {
-	//			//fmt.Println("Not enough params for the cmd: cr")
-	//			fmt.Fprintf(fp, "Not enough params for the cmd: cr")
-	//
-	//		}
-	//	case "de":
-	//		//fmt.Println("Command: " + cmd)
-	//		if rl == nil {
-	//			//fmt.Println("ERROR: have to run in/id first")
-	//			fmt.Fprintf(fp, "ERROR: have to run in/id first")
-	//
-	//			break
-	//		}
-	//
-	//		if len(input) == 2 {
-	//			p1 = input[1]
-	//
-	//			if destroy(&pcbArray, &rcbArray, &rl, p1) == -1 {
-	//				//fmt.Println("Destroy Error")
-	//				fmt.Fprintf(fp, "Destroy Error")
-	//
-	//			}
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			//fmt.Println("Not enough params for the cmd: de")
-	//			fmt.Fprintf(fp, "Not enough params for the cmd: de")
-	//
-	//		}
-	//	case "rq":
-	//		//fmt.Println("Command: " + cmd)
-	//		if rl == nil {
-	//			//fmt.Println("ERROR: have to run in/id first")
-	//			fmt.Fprintf(fp, "ERROR: have to run in/id first")
-	//
-	//			break
-	//		}
-	//
-	//		if len(input) == 3 {
-	//			p1 = input[1]
-	//			p2 = input[2]
-	//
-	//			resourceNum, _ := strconv.Atoi(p1)
-	//
-	//			if resourceNum < 0 || resourceNum > 3 {
-	//				//fmt.Println("ERROR_RQ: resource num not in the right range")
-	//				fmt.Fprintf(fp, "ERROR_RQ: resource num not in the right range")
-	//				break
-	//			}
-	//
-	//			if request(&rl, &pcbArray, &rcbArray, p1, p2) == -1 {
-	//				//fmt.Println("ERROR: failed to request")
-	//				fmt.Fprintf(fp, "ERROR: failed to request")
-	//
-	//				break
-	//			}
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			//fmt.Println("Not enough params for the cmd: rq")
-	//			fmt.Fprintf(fp, "Not enough params for the cmd: rq")
-	//		}
-	//
-	//	case "rl":
-	//		//fmt.Println("Command: " + cmd)
-	//		if rl == nil {
-	//			//fmt.Println("ERROR: have to run in/id first")
-	//			fmt.Fprintf(fp, "ERROR: have to run in/id first")
-	//			break
-	//		}
-	//
-	//		if len(input) == 3 {
-	//			p1 = input[1]
-	//			p2 = input[2]
-	//
-	//			resourceNum, _ := strconv.Atoi(p1)
-	//			requestedUnits, _ := strconv.Atoi(p2)
-	//			inventory := (rcbArray)[resourceNum].Inventory
-	//			state := (rcbArray)[resourceNum].State
-	//
-	//			if resourceNum < 0 || resourceNum > 3 {
-	//				//fmt.Println("ERROR_RQ: resource num not in the right range")
-	//				fmt.Fprintf(fp, "ERROR_RQ: resource num not in the right range")
-	//				break
-	//			}
-	//
-	//			if requestedUnits < 0 || requestedUnits > inventory || requestedUnits > state {
-	//				//fmt.Println("Process -1 running")
-	//				fmt.Fprintf(fp, "Process -1 running")
-	//				break
-	//			}
-	//
-	//			if release(&rl, &pcbArray, &rcbArray, p1, p2) == -1 {
-	//				fmt.Println("ERROR: failed to release")
-	//				fmt.Println("Process -1 running")
-	//				fmt.Fprintf(fp, "Process -1 running")
-	//			}
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			fmt.Println("Not enough params for the cmd: rl")
-	//		}
-	//	case "to":
-	//		//fmt.Println("Command: " + cmd)
-	//		if rl == nil {
-	//			fmt.Println("ERROR: have to run in/id first")
-	//			break
-	//		}
-	//
-	//		if len(input) == 1 {
-	//			timeout(&rl)
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			fmt.Println("Not enough params for the cmd: rq")
-	//		}
-	//	case "id":
-	//		//fmt.Println("Command: " + cmd)
-	//		if len(input) == 1 {
-	//			rl = in("3", "1", "1", "2", "3", &pcbArray, &rcbArray)
-	//			//scheduler(rl)
-	//			scheduler(fp, rl)
-	//
-	//		} else {
-	//			fmt.Println("Id doesn't need any params")
-	//		}
-	//	case "exit":
-	//		os.Exit(0)
-	//	default:
-	//		fmt.Println("NOT A VALID COMMAND")
-	//	}
-	//}
 
 }
